@@ -3832,12 +3832,22 @@ function subcategoriasDe(lista, categoriaPrincipal){
   return filhos;
 }
 
-let _dfcHierarquiaCache = null;
-function dfcHierarquiaOrdenada(){
-  if (!_dfcHierarquiaCache) _dfcHierarquiaCache = construirHierarquiaOrdenada(appData.dfc);
-  return _dfcHierarquiaCache;
+// DFC: a hierarquia e' montada POR ANO. A coluna Ordem e' so' a posicao da
+// linha dentro do CSV de cada ano - quando o sistema ganha categorias novas
+// (ex.: "Recarga VExpenses" em 2026), todas as linhas abaixo descem e a mesma
+// Ordem passa a apontar pra categorias diferentes em anos diferentes. Misturar
+// os anos numa lista so' fazia subcategoria de um grupo "cair" dentro de outro
+// (ex.: Receitas a Identificar aparecendo em 4.1 Deducoes da Receita). Dentro
+// de um mesmo ano o CSV e' sempre coerente, entao cada ano tem a sua lista.
+let _dfcHierarquiaCache = null; // Map ano -> lista ordenada
+function dfcHierarquiaOrdenada(ano){
+  if (!_dfcHierarquiaCache) _dfcHierarquiaCache = new Map();
+  if (!_dfcHierarquiaCache.has(ano)){
+    _dfcHierarquiaCache.set(ano, construirHierarquiaOrdenada(appData.dfc.filter(r=>r.ano===ano)));
+  }
+  return _dfcHierarquiaCache.get(ano);
 }
-function dfcSubcategorias(categoriaPrincipal){ return subcategoriasDe(dfcHierarquiaOrdenada(), categoriaPrincipal); }
+function dfcSubcategorias(categoriaPrincipal, ano){ return subcategoriasDe(dfcHierarquiaOrdenada(ano), categoriaPrincipal); }
 
 function dfcValorPeriodo(categoria, tipo, ano, mesAbbr){
   return appData.dfc
@@ -3943,12 +3953,12 @@ function abrirDfcDetalhe(td){
   const categoria = td.getAttribute('data-categoria');
   const ano = +td.getAttribute('data-ano');
   const mesAbbr = td.getAttribute('data-mes');
-  const info = dfcHierarquiaOrdenada().find(c=>c.categoria===categoria);
+  const info = dfcHierarquiaOrdenada(ano).find(c=>c.categoria===categoria);
   if (!info) return;
 
   // subcategorias zeradas naquele mes nao aparecem - so' interessa o que
   // realmente teve lancamento no periodo.
-  const filhos = dfcSubcategorias(categoria)
+  const filhos = dfcSubcategorias(categoria, ano)
     .map(f => ({ ...f, valor: dfcValorPeriodo(f.categoria, 'Realizado', ano, mesAbbr) }))
     .filter(f => Math.abs(f.valor) >= 0.005);
   if (!filhos.length) return;
@@ -4076,7 +4086,7 @@ function dfcCelulas(categoria, anos, meses, extraClasse, mesInfo){
   if (modo === 'realizado' || modo === 'ambos'){
     const v = dfcValorConsolidado(categoria, 'Realizado', anos, meses);
     const tone = dfcTonalidade(categoria, v);
-    const hover = mesInfo && Math.abs(v) >= 0.005 && !DFC_SEM_HOVER.has(categoria) && dfcSubcategorias(categoria).length;
+    const hover = mesInfo && Math.abs(v) >= 0.005 && !DFC_SEM_HOVER.has(categoria) && dfcSubcategorias(categoria, mesInfo.ano).length;
     const hoverAttrs = hover ? ` data-categoria="${categoria.replace(/"/g,'&quot;')}" data-ano="${mesInfo.ano}" data-mes="${mesInfo.mesAbbr}"` : '';
     html += `<td class="num tabular col-realizado ${tone} ${extraClasse}${hover?' dfc-hover-target':''}"${hoverAttrs}>${fmtBRLDfc(v)}</td>`;
   }
